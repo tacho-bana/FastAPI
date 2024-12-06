@@ -1,27 +1,23 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from PIL import Image
 import io
 import torch
 from torchvision import transforms, models
-import base64
-import os
 
 app = FastAPI()
 
-# テンプレートディレクトリの設定
-templates = Jinja2Templates(directory="templates")
+# 静的ファイルとテンプレート設定
+app.mount("/static", StaticFiles(directory="static"), name="static")
+#これは、テンプレートファイルを読み込むための設定です。
+templates = Jinja2Templates(directory="static")
 
-# デバイスの自動選択
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cpu")
+# mpsを使うための設定
+device = torch.device("mps")
 
-# ResNet152モデルの読み込み
+# ResNet152モデルのロード
 model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT)
 model.to(device)
 model.eval()
@@ -34,58 +30,39 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# 日本語ラベルの読み込み
-labels_path = "imagenet_classes_jp.txt"
-if not os.path.exists(labels_path):
-    raise FileNotFoundError(f"ラベルファイルが見つかりません: {labels_path}")
-
-with open(labels_path, encoding='utf-8') as f:
+# 日本語クラス名の読み込み
+with open("imagenet_classes_jp.txt", encoding="utf-8") as f:
     labels = [line.strip() for line in f.readlines()]
 
-# ルートパスにアクセスしたときの処理
 @app.get("/", response_class=HTMLResponse)
-async def read_index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+async def read_index():
+    with open("static/index.html", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content, status_code=200)
 
-# /upload にアクセスしたときの処理
-@app.post("/upload", response_class=HTMLResponse)
-async def upload_image(request: Request, file: UploadFile = File(...)):
-    try:
-        # 画像ファイルを読み込み、PILのImageオブジェクトに変換
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
-        
-        # 画像の前処理
-        input_tensor = preprocess(image)
-        input_batch = input_tensor.unsqueeze(0).to(device)
-        
-        # モデルによる推論
-        with torch.no_grad():
-            output = model(input_batch)
-        
-        # Top5の予測結果を取得
-        probabilities = torch.nn.functional.softmax(output[0], dim=0)
-        top5_prob, top5_catid = torch.topk(probabilities, 5)
-        
-        top5 = []
-        for i in range(top5_prob.size(0)):
-            top5.append({"label": labels[top5_catid[i]], "prob": top5_prob[i].item() * 100})
+@app.post("/upload")
+async def upload_image(file: UploadFile = File(...)):
+    contents = await file.read()
+    image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        # 画像をBase64エンコード
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-        img_data = f"data:image/jpeg;base64,{img_str}"
-        
-        # 結果をテンプレートに渡す
-        return templates.TemplateResponse("result.html", {
-            "request": request,
-            "image": img_data,
-            "predictions": top5
-        })
-    
-    except Exception as e:
-        return templates.TemplateResponse("result.html", {
-            "request": request,
-            "error": f"エラーが発生しました: {e}"
-        })
+    # 画像を保存しておく
+    image_path = f"static/uploaded_image.jpg"
+    image.save(image_path)
+
+    # 前処理と推論
+    input_tensor = preprocess(image)
+    input_batch = input_tensor.unsqueeze(0).to(device)
+    with torch.no_grad():
+        output = model(input_batch)
+
+    # Top5分類結果を取得
+    probabilities = torch.nn.functional.softmax(output[0], dim=0)
+    top5_prob, top5_catid = torch.topk(probabilities, 5)
+    results = [(labels[catid], prob.item()) for prob, catid in zip(top5_prob, top5_catid)]
+
+    # テンプレートに渡す
+    return templates.TemplateResponse("result.html", {
+        "request": {},  # 必須パラメータ
+        "results": results,
+        "image_url": f"/static/uploaded_image.jpg"
+    })

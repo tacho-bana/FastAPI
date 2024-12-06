@@ -1,71 +1,20 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>分類結果</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 20px;
-        }
-        img {
-            max-width: 500px;
-            height: auto;
-            border: 1px solid #ddd;
-            padding: 5px;
-            margin-top: 20px;
-        }
-        .predictions {
-            margin-top: 20px;
-            display: inline-block;
-            text-align: left;
-        }
-        .predictions ul {
-            list-style-type: none;
-            padding: 0;
-        }
-        .predictions li {
-            margin-bottom: 10px;
-            font-size: 1.1em;
-        }
-        .error {
-            color: red;
-            font-size: 1.2em;
-            margin-top: 20px;
-        }
-        a {
-            display: inline-block;
-            margin-top: 30px;
-            text-decoration: none;
-            color: #007BFF;
-            font-size: 1em;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
 </head>
 <body>
     <h1>分類結果</h1>
-    
-    {% if image %}
-        <img src="{{ image }}" alt="Uploaded Image">
-
-
-        <div class="predictions">
-            <h2>Top 5 予測結果:</h2>
-            <ul>
-                {% for pred in predictions %}
-                    <li>{{ loop.index }}. {{ pred.label }} - {{ "%.2f"|format(pred.prob) }}%</li>
-                {% endfor %}
-            </ul>
-        </div>
-    {% elif error %}
-        <div class="error">{{ error }}</div>
-    {% endif %}
-    
-    <a href="/">別の画像をアップロード</a>
+    <h2>アップロードされた画像:</h2>
+    <img src="{{ image_url }}" alt="Uploaded Image" style="max-width: 300px;">
+    <h2>予測結果:</h2>
+    <ul>
+        {% for label, prob in results %}
+            <li>{{ label }}: {{ prob | round(4) * 100 }}%</li>
+        {% endfor %}
+    </ul>
+    <a href="/">別の画像を分類する</a>
 </body>
 </html>
